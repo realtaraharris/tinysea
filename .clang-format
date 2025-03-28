@@ -1,0 +1,8 @@
+BasedOnStyle: LLVM
+AccessModifierOffset: -4
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: Inline
+BreakBeforeBraces: Attach
+ColumnLimit: 80
+IndentWidth: 4
+Language: Cpp
