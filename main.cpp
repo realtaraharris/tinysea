@@ -11,6 +11,7 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/JSON.h"
 #include <fstream>
+#include <iostream>
 #include <unordered_map>
 
 using namespace clang;
@@ -23,6 +24,7 @@ static llvm::cl::opt<std::string>
                 llvm::cl::cat(MyToolCategory));
 
 class Renamer {
+    std::mutex mtx;
     std::unordered_map<std::string, std::string> identifierMap;
     std::unordered_map<std::string, std::string> macroMap;
     std::vector<std::string> nameSequence;
@@ -38,6 +40,7 @@ class Renamer {
                 break;
         }
         std::reverse(name.begin(), name.end());
+        std::cout << "name: " << name << std::endl;
         return name;
     }
 
@@ -207,6 +210,15 @@ void Renamer::saveMappings(const std::string &filename) {
 
 std::string Renamer::getShortName(const std::string &qualifiedName,
                                   bool isMacro) {
+    std::lock_guard<std::mutex> lock(mtx);
+
+    static const std::set<std::string> preserved{"main", "ptrdiff_t", "size_t",
+                                                 "nullptr_t", "max_align_t"};
+
+    if (preserved.count(qualifiedName) || qualifiedName.starts_with("std::")) {
+        return qualifiedName;
+    }
+
     auto &map = isMacro ? macroMap : identifierMap;
     if (auto it = map.find(qualifiedName); it != map.end()) {
         return it->second;
@@ -225,6 +237,7 @@ class CustomPPCallbacks : public PPCallbacks {
     Renamer &renamer;
     SourceManager &sm;
     Rewriter &rewriter;
+    std::set<std::string> processedMacros;
 
 public:
     CustomPPCallbacks(Renamer &r, SourceManager &sm, Rewriter &rw)
@@ -232,11 +245,36 @@ public:
 
     void MacroDefined(const Token &MacroNameTok,
                       const MacroDirective *MD) override {
-        if (sm.isInSystemHeader(MacroNameTok.getLocation()))
-            return;
-
+        // check against a list of known identifiers
         std::string macroName =
             MacroNameTok.getIdentifierInfo()->getName().str();
+        if (processedMacros.count(macroName)) {
+            return;
+        } // already processed
+        processedMacros.insert(macroName);
+
+        // now actually process the macro
+        SourceLocation loc = MacroNameTok.getLocation();
+        if (loc.isInvalid() || sm.isInSystemHeader(loc) ||
+            !sm.isWrittenInMainFile(loc)) {
+            return;
+        }
+
+        bool isInvalid = loc.isInvalid();
+        bool isInMainFile = sm.isInMainFile(loc);
+        bool isInSystemHeader = sm.isInSystemHeader(loc);
+        std::string filename = sm.getFilename(loc).str();
+
+        llvm::errs() << "MacroDefined: "
+                     << MacroNameTok.getIdentifierInfo()->getName()
+                     << "\n macroName: " << macroName
+                     << "\n isInvalid: " << isInvalid
+                     << "\n isInMainFile: " << isInMainFile
+                     << "\n isInSystemHeader: " << isInSystemHeader
+                     << "\n Location: " << loc.printToString(sm)
+                     << "\n Filename: " << filename << "\n";
+        // sm.dump();
+
         std::string shortName = renamer.getShortName(macroName, true);
 
         rewriter.ReplaceText(MacroNameTok.getLocation(), macroName.length(),
@@ -245,8 +283,24 @@ public:
 
     void MacroExpands(const Token &MacroNameTok, const MacroDefinition &MD,
                       SourceRange Range, const MacroArgs *Args) override {
-        if (sm.isInSystemHeader(MacroNameTok.getLocation()))
+        SourceLocation loc = MacroNameTok.getLocation();
+        if (loc.isInvalid() || sm.isInSystemHeader(loc) ||
+            !sm.isWrittenInMainFile(loc)) {
             return;
+        }
+        bool isInvalid = loc.isInvalid();
+        bool isInMainFile = sm.isInMainFile(loc);
+        bool isInSystemHeader = sm.isInSystemHeader(loc);
+        std::string filename = sm.getFilename(loc).str();
+
+        llvm::errs() << "MacroExpands: "
+                     << MacroNameTok.getIdentifierInfo()->getName()
+                     << "\n  Location: " << loc.printToString(sm)
+                     << "\n  Filename: " << filename
+                     << "\n  isInvalid: " << isInvalid
+                     << "\n  isInMainFile: " << isInMainFile
+                     << "\n  isInSystemHeader: " << isInSystemHeader << "\n";
+        // sm.dump();
 
         std::string macroName =
             MacroNameTok.getIdentifierInfo()->getName().str();
@@ -264,33 +318,62 @@ class CustomASTVisitor : public RecursiveASTVisitor<CustomASTVisitor> {
     Renamer &renamer;
     SourceManager &sm;
     Rewriter &rewriter;
+    std::set<Decl *> processedDecls;
 
 public:
     CustomASTVisitor(ASTContext &ctx, Renamer &r, Rewriter &rw)
         : context(ctx), renamer(r), sm(ctx.getSourceManager()), rewriter(rw) {}
 
     bool VisitNamedDecl(NamedDecl *decl) {
+        if (!decl || processedDecls.count(decl))
+            return true;
+        processedDecls.insert(decl);
+
+        // Rest of your processing logic...
+        llvm::errs() << "START Processing: " << decl->getNameAsString() << "\n";
+
+        if (decl->getIdentifier() && decl->getName().empty()) {
+            return true; // Skip anonymous declarations
+        }
+
+        SourceLocation loc = decl->getLocation();
+        llvm::errs() << "Processing declaration: "
+                     << decl->getQualifiedNameAsString() << " at "
+                     << loc.printToString(
+                            decl->getASTContext().getSourceManager())
+                     << "\n";
+        llvm::errs().flush(); // Ensure immediate output
+
         if (shouldSkip(decl))
             return true;
 
+        // llvm::errs() << "Processing declaration: " << decl->getName() <<
+        // "\n";
         std::string qualifiedName = decl->getQualifiedNameAsString();
         std::string shortName = renamer.getShortName(qualifiedName);
-
+        llvm::errs() << "VisitNamedDecl, qualifiedName: " << qualifiedName
+                     << " shortName: " << shortName << "\n";
         rewriter.ReplaceText(decl->getLocation(), decl->getName().size(),
                              shortName);
 
+        llvm::errs() << "Rewrote " << decl->getName() << " to " << shortName
+                     << " at " << loc.printToString(sm) << "\n";
+        llvm::errs() << "END Processing: " << decl->getNameAsString() << "\n";
         return true;
     }
 
     bool VisitDeclRefExpr(DeclRefExpr *expr) {
         if (NamedDecl *decl = expr->getDecl()) {
+            llvm::errs() << "Processing declaration reference expression: "
+                         << decl << "\n";
             if (shouldSkip(decl))
                 return true;
 
             std::string qualifiedName = decl->getQualifiedNameAsString();
             std::string shortName =
                 renamer.getIdentifierShortName(qualifiedName);
-
+            llvm::errs() << "VisitDeclRefExpr, qualifiedName: " << qualifiedName
+                         << " shortName: " << shortName << "\n";
             if (!shortName.empty()) {
                 rewriter.ReplaceText(expr->getLocation(),
                                      decl->getName().size(), shortName);
@@ -301,8 +384,34 @@ public:
 
 private:
     bool shouldSkip(NamedDecl *decl) {
-        return sm.isInSystemHeader(decl->getLocation()) || decl->isImplicit() ||
-               decl->getLocation().isInvalid();
+        SourceManager &sm = decl->getASTContext().getSourceManager();
+        SourceLocation loc = decl->getLocation();
+
+        if (loc.isInvalid() || decl->isImplicit())
+            return true;
+
+        // Get precise file path
+        std::string filename = sm.getFilename(loc).str();
+
+        // Skip all Haiku system headers
+        if (filename.find("/boot/system/") != std::string::npos) {
+            return true;
+        }
+
+        // Skip GCC internal headers
+        if (filename.find("/gcc/x86_64-unknown-haiku/") != std::string::npos) {
+            return true;
+        }
+
+        // Skip standard library headers
+        if (filename.find("/include/c++/") != std::string::npos) {
+            return true;
+        }
+
+        llvm::errs() << "Checking: " << decl->getQualifiedNameAsString()
+                     << " in file: " << filename << "\n";
+
+        return false; // sm.isInSystemHeader(loc);
     }
 };
 
@@ -320,23 +429,35 @@ public:
 
 class CustomFrontendAction : public clang::ASTFrontendAction {
     Renamer &renamer;
-    clang::Rewriter rewriter;
+    std::unique_ptr<Rewriter> rewriter;
 
 public:
-    CustomFrontendAction(Renamer &r) : renamer(r) {}
+    CustomFrontendAction(Renamer &r)
+        : renamer(r), rewriter(std::make_unique<Rewriter>()) {}
 
     std::unique_ptr<clang::ASTConsumer>
     CreateASTConsumer(clang::CompilerInstance &ci, llvm::StringRef) override {
-        rewriter.setSourceMgr(ci.getSourceManager(), ci.getLangOpts());
+        rewriter->setSourceMgr(ci.getSourceManager(), ci.getLangOpts());
         return std::make_unique<CustomASTConsumer>(ci.getASTContext(), renamer,
-                                                   rewriter);
+                                                   *rewriter);
     }
 
     void ExecuteAction() override {
         clang::CompilerInstance &ci = getCompilerInstance();
         ci.getPreprocessor().addPPCallbacks(std::make_unique<CustomPPCallbacks>(
-            renamer, ci.getSourceManager(), rewriter));
+            renamer, ci.getSourceManager(), *rewriter));
         clang::ASTFrontendAction::ExecuteAction();
+
+        // careful: we're overwriting files
+        if (rewriter->overwriteChangedFiles()) {
+            llvm::errs() << "Successfully wrote modified files\n";
+        } else {
+            llvm::errs() << "No files modified\n";
+        }
+
+        // llvm::errs() << "Total buffers modified: " <<
+        //     rewriter.getBufferRanges().size() << "\n";
+        rewriter.reset();
     }
 };
 
@@ -370,10 +491,11 @@ int main(int argc, const char **argv) {
         renamer.loadMappings(MappingFile);
 
     CustomActionFactory factory(renamer);
+
     int result = tool.run(&factory);
 
-    if (!MappingFile.empty())
-        renamer.saveMappings(MappingFile);
+    // TODO: if renamer.identifierMap is empty, don't try to save the mapping
+    renamer.saveMappings(MappingFile);
 
     return result;
 }

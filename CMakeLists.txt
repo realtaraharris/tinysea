@@ -10,11 +10,11 @@ find_package(Clang REQUIRED CONFIG)
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS} ${CLANG_LIBRARY_DIRS})
 
-add_executable(identifier_shortener
+add_executable(tinysea
     main.cpp
 )
 
-target_link_libraries(identifier_shortener
+target_link_libraries(tinysea
     PRIVATE
     clangTooling
     clangRewrite
