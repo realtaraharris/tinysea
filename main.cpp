@@ -33,14 +33,15 @@ class Renamer {
 
     std::string generateName(unsigned index) {
         std::string name;
-        while (index >= 0) {
+        index += 1; // Start counting from 1 to avoid empty string
+
+        while (index > 0) {
+            index -= 1; // Adjust to 0-based for modulo
             name.push_back('a' + (index % 26));
-            index = index / 26 - 1;
-            if (index < 0)
-                break;
+            index = index / 26;
         }
+
         std::reverse(name.begin(), name.end());
-        std::cout << "name: " << name << std::endl;
         return name;
     }
 
@@ -212,10 +213,12 @@ std::string Renamer::getShortName(const std::string &qualifiedName,
                                   bool isMacro) {
     std::lock_guard<std::mutex> lock(mtx);
 
-    static const std::set<std::string> preserved{"main", "ptrdiff_t", "size_t",
-                                                 "nullptr_t", "max_align_t"};
+    static const std::set<std::string> preservedTypes = {
+        "int",  "char",      "void",   "bool",      "float",      "double",
+        "main", "ptrdiff_t", "size_t", "nullptr_t", "max_align_t"};
 
-    if (preserved.count(qualifiedName) || qualifiedName.starts_with("std::")) {
+    if (preservedTypes.count(qualifiedName) || qualifiedName.starts_with("std::") ||
+        preservedTypes.count(qualifiedName)) {
         return qualifiedName;
     }
 
@@ -328,36 +331,27 @@ public:
             return true;
         processedDecls.insert(decl);
 
-        // Rest of your processing logic...
-        llvm::errs() << "START Processing: " << decl->getNameAsString() << "\n";
+        SourceManager &sm = decl->getASTContext().getSourceManager();
+        SourceLocation loc = decl->getLocation();
 
-        if (decl->getIdentifier() && decl->getName().empty()) {
-            return true; // Skip anonymous declarations
+        // Validate declaration location
+        if (loc.isInvalid() || !sm.isWrittenInMainFile(loc) ||
+            sm.isInSystemHeader(loc)) {
+            return true;
         }
 
-        SourceLocation loc = decl->getLocation();
-        llvm::errs() << "Processing declaration: "
-                     << decl->getQualifiedNameAsString() << " at "
-                     << loc.printToString(
-                            decl->getASTContext().getSourceManager())
-                     << "\n";
-        llvm::errs().flush(); // Ensure immediate output
-
-        if (shouldSkip(decl))
-            return true;
-
-        // llvm::errs() << "Processing declaration: " << decl->getName() <<
-        // "\n";
+        // Generate short name
         std::string qualifiedName = decl->getQualifiedNameAsString();
         std::string shortName = renamer.getShortName(qualifiedName);
-        llvm::errs() << "VisitNamedDecl, qualifiedName: " << qualifiedName
-                     << " shortName: " << shortName << "\n";
-        rewriter.ReplaceText(decl->getLocation(), decl->getName().size(),
-                             shortName);
 
-        llvm::errs() << "Rewrote " << decl->getName() << " to " << shortName
-                     << " at " << loc.printToString(sm) << "\n";
-        llvm::errs() << "END Processing: " << decl->getNameAsString() << "\n";
+        // Perform replacement
+        if (decl->getIdentifier() && !decl->getName().empty()) {
+            SourceLocation nameLoc = sm.getSpellingLoc(decl->getLocation());
+            rewriter.ReplaceText(nameLoc, decl->getName().size(), shortName);
+            llvm::errs() << "Renamed: " << qualifiedName << " => " << shortName
+                         << "\n";
+        }
+
         return true;
     }
 
@@ -385,17 +379,12 @@ public:
         if (!D)
             return true;
 
+        SourceManager &sm = context.getSourceManager();
         SourceLocation loc = D->getLocation();
-        if (loc.isInvalid())
-            return true;
 
-        // Get precise file information
-        bool isMainFile = sm.isInMainFile(loc);
-        bool isSystemHeader = sm.isInSystemHeader(loc);
-        std::string filename = sm.getFilename(loc).str();
-
-        // Skip anything not in main file or in system headers
-        if (!isMainFile || isSystemHeader) {
+        // Fast rejection of non-main file declarations
+        if (loc.isValid() &&
+            (!sm.isWrittenInMainFile(loc) || sm.isInSystemHeader(loc))) {
             return true;
         }
 
