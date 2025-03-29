@@ -245,6 +245,11 @@ public:
 
     void MacroDefined(const Token &MacroNameTok,
                       const MacroDirective *MD) override {
+        SourceLocation loc = MacroNameTok.getLocation();
+        if (!sm.isInMainFile(loc) || sm.isInSystemHeader(loc)) {
+            return;
+        }
+
         // check against a list of known identifiers
         std::string macroName =
             MacroNameTok.getIdentifierInfo()->getName().str();
@@ -254,12 +259,6 @@ public:
         processedMacros.insert(macroName);
 
         // now actually process the macro
-        SourceLocation loc = MacroNameTok.getLocation();
-        if (loc.isInvalid() || sm.isInSystemHeader(loc) ||
-            !sm.isWrittenInMainFile(loc)) {
-            return;
-        }
-
         bool isInvalid = loc.isInvalid();
         bool isInMainFile = sm.isInMainFile(loc);
         bool isInSystemHeader = sm.isInSystemHeader(loc);
@@ -284,10 +283,10 @@ public:
     void MacroExpands(const Token &MacroNameTok, const MacroDefinition &MD,
                       SourceRange Range, const MacroArgs *Args) override {
         SourceLocation loc = MacroNameTok.getLocation();
-        if (loc.isInvalid() || sm.isInSystemHeader(loc) ||
-            !sm.isWrittenInMainFile(loc)) {
+        if (!sm.isInMainFile(loc) || sm.isInSystemHeader(loc)) {
             return;
         }
+
         bool isInvalid = loc.isInvalid();
         bool isInMainFile = sm.isInMainFile(loc);
         bool isInSystemHeader = sm.isInSystemHeader(loc);
@@ -382,36 +381,32 @@ public:
         return true;
     }
 
-private:
-    bool shouldSkip(NamedDecl *decl) {
-        SourceManager &sm = decl->getASTContext().getSourceManager();
-        SourceLocation loc = decl->getLocation();
-
-        if (loc.isInvalid() || decl->isImplicit())
+    bool TraverseDecl(Decl *D) {
+        if (!D)
             return true;
 
-        // Get precise file path
+        SourceLocation loc = D->getLocation();
+        if (loc.isInvalid())
+            return true;
+
+        // Get precise file information
+        bool isMainFile = sm.isInMainFile(loc);
+        bool isSystemHeader = sm.isInSystemHeader(loc);
         std::string filename = sm.getFilename(loc).str();
 
-        // Skip all Haiku system headers
-        if (filename.find("/boot/system/") != std::string::npos) {
+        // Skip anything not in main file or in system headers
+        if (!isMainFile || isSystemHeader) {
             return true;
         }
 
-        // Skip GCC internal headers
-        if (filename.find("/gcc/x86_64-unknown-haiku/") != std::string::npos) {
-            return true;
-        }
+        return RecursiveASTVisitor<CustomASTVisitor>::TraverseDecl(D);
+    }
 
-        // Skip standard library headers
-        if (filename.find("/include/c++/") != std::string::npos) {
-            return true;
-        }
-
-        llvm::errs() << "Checking: " << decl->getQualifiedNameAsString()
-                     << " in file: " << filename << "\n";
-
-        return false; // sm.isInSystemHeader(loc);
+private:
+    bool shouldSkip(NamedDecl *decl) {
+        // Simplified since TraverseDecl already handles filtering
+        SourceLocation loc = decl->getLocation();
+        return loc.isInvalid() || decl->isImplicit();
     }
 };
 
