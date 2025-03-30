@@ -2,6 +2,7 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Rewrite/Core/Rewriter.h"
@@ -167,6 +168,8 @@ public:
         }
         return "";
     }
+
+    bool hasIdentifierMappings() const { return !identifierMap.empty(); }
 };
 
 void Renamer::loadMappings(const std::string &filename) {
@@ -217,7 +220,8 @@ std::string Renamer::getShortName(const std::string &qualifiedName,
         "int",  "char",      "void",   "bool",      "float",      "double",
         "main", "ptrdiff_t", "size_t", "nullptr_t", "max_align_t"};
 
-    if (preservedTypes.count(qualifiedName) || qualifiedName.starts_with("std::") ||
+    if (preservedTypes.count(qualifiedName) ||
+        qualifiedName.starts_with("std::") ||
         preservedTypes.count(qualifiedName)) {
         return qualifiedName;
     }
@@ -428,20 +432,40 @@ public:
 
     void ExecuteAction() override {
         clang::CompilerInstance &ci = getCompilerInstance();
+
+        // Store original diagnostic consumer
+        std::unique_ptr<DiagnosticConsumer> origConsumer =
+            ci.getDiagnostics().takeClient();
+
+        // Create diagnostic options explicitly
+        auto diagOpts = new DiagnosticOptions();
+        ci.getDiagnostics().setClient(
+            new TextDiagnosticPrinter(llvm::errs(), diagOpts));
+
         ci.getPreprocessor().addPPCallbacks(std::make_unique<CustomPPCallbacks>(
             renamer, ci.getSourceManager(), *rewriter));
         clang::ASTFrontendAction::ExecuteAction();
 
-        // careful: we're overwriting files
-        if (rewriter->overwriteChangedFiles()) {
-            llvm::errs() << "Successfully wrote modified files\n";
-        } else {
-            llvm::errs() << "No files modified\n";
+        // Check and report file write diagnostics
+        bool hadErrorsBefore = ci.getDiagnostics().hasErrorOccurred();
+        bool overwriteResult = rewriter->overwriteChangedFiles();
+        bool hadErrorsAfter = ci.getDiagnostics().hasErrorOccurred();
+
+        if (overwriteResult || hadErrorsAfter != hadErrorsBefore) {
+            llvm::errs() << "\nFile write operation diagnostics:\n";
+            // Diagnostics are automatically printed via TextDiagnosticPrinter
         }
 
-        // llvm::errs() << "Total buffers modified: " <<
-        //     rewriter.getBufferRanges().size() << "\n";
-        rewriter.reset();
+        if (!overwriteResult) {
+            llvm::errs() << "Successfully wrote modified files\n";
+        } else {
+            llvm::errs() << "Failed to write some files\n";
+        }
+
+        // Restore original consumer
+        if (origConsumer) {
+            ci.getDiagnostics().setClient(origConsumer.release());
+        }
     }
 };
 
@@ -475,11 +499,12 @@ int main(int argc, const char **argv) {
         renamer.loadMappings(MappingFile);
 
     CustomActionFactory factory(renamer);
-
     int result = tool.run(&factory);
 
-    // TODO: if renamer.identifierMap is empty, don't try to save the mapping
-    renamer.saveMappings(MappingFile);
+    // Only save if there are mappings and a filename was specified
+    if (!MappingFile.empty() && renamer.hasIdentifierMappings()) {
+        renamer.saveMappings(MappingFile);
+    }
 
     return result;
 }
