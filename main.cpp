@@ -37,13 +37,13 @@ class Renamer {
 
     std::string generateName(unsigned index) {
         std::string name;
-        index += 1; // Start counting from 1 to avoid empty string
+        unsigned n = index;
 
-        while (index > 0) {
-            index -= 1; // Adjust to 0-based for modulo
-            name.push_back('a' + (index % 26));
-            index = index / 26;
-        }
+        do {
+            unsigned remainder = n % 26;
+            name.push_back('a' + remainder);
+            n = n / 26;
+        } while (n > 0);
 
         std::reverse(name.begin(), name.end());
         return name;
@@ -76,6 +76,17 @@ class Renamer {
             "volatile",     "wchar_t",      "while",         "xor",
             "xor_eq"};
         reservedKeywords.insert(keywords.begin(), keywords.end());
+    }
+
+    unsigned shortNameToIndex(const std::string &name) {
+        unsigned value = 0;
+        for (auto it = name.rbegin(); it != name.rend(); ++it) {
+            char c = *it;
+            if (c < 'a' || c > 'z')
+                return UINT_MAX; // Invalid character
+            value = value * 26 + (c - 'a' + 1);
+        }
+        return value - 1; // Account for +1 offset in generation
     }
 
 public:
@@ -114,11 +125,9 @@ void Renamer::loadMappings(const std::string &filename) {
     if (!file)
         return;
 
-    // Read entire file into string
     std::string content((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
 
-    // Parse JSON from string
     auto jsonOrError = llvm::json::parse(content);
     if (!jsonOrError) {
         llvm::errs() << "Failed to parse JSON: "
@@ -126,13 +135,36 @@ void Renamer::loadMappings(const std::string &filename) {
         return;
     }
 
+    unsigned maxIndex = 0;
     if (auto obj = jsonOrError->getAsObject()) {
         for (auto &pair : *obj) {
-            identifierMap[pair.getFirst().str()] =
+            std::string original = pair.getFirst().str();
+            std::string shortName =
                 pair.getSecond().getAsString().value().str();
-            usedShortNames.insert(pair.getSecond().getAsString().value().str());
+
+            // Validate short name format
+            bool valid =
+                std::all_of(shortName.begin(), shortName.end(),
+                            [](char c) { return c >= 'a' && c <= 'z'; });
+
+            if (!valid) {
+                llvm::errs()
+                    << "Skipping invalid short name: " << shortName << "\n";
+                continue;
+            }
+
+            // Track maximum index
+            unsigned index = shortNameToIndex(shortName);
+            if (index != UINT_MAX && index >= maxIndex) {
+                maxIndex = index + 1; // Set to next available index
+            }
+
+            identifierMap[original] = shortName;
+            usedShortNames.insert(shortName);
         }
     }
+
+    currentIndex = maxIndex;
 }
 
 void Renamer::saveMappings(const std::string &filename) {
