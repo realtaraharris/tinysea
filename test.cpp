@@ -1,4 +1,4 @@
-int a() {
-    int b = 42;
-    return b;
+int myFunction() {
+    int myVariable = 42;
+    return myVariable;
 }

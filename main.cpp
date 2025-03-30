@@ -13,7 +13,9 @@
 #include "llvm/Support/JSON.h"
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -30,6 +32,7 @@ class Renamer {
     std::unordered_map<std::string, std::string> macroMap;
     std::vector<std::string> nameSequence;
     std::set<std::string> reservedKeywords;
+    std::unordered_set<std::string> usedShortNames;
     unsigned currentIndex = 0;
 
     std::string generateName(unsigned index) {
@@ -47,97 +50,31 @@ class Renamer {
     }
 
     void initKeywords() {
-        const std::vector<std::string> keywords = {"alignas",
-                                                   "alignof",
-                                                   "and",
-                                                   "and_eq",
-                                                   "asm",
-                                                   "auto",
-                                                   "bitand",
-                                                   "bitor",
-                                                   "bool",
-                                                   "break",
-                                                   "case",
-                                                   "catch",
-                                                   "char",
-                                                   "char8_t",
-                                                   "char16_t",
-                                                   "char32_t",
-                                                   "class",
-                                                   "compl",
-                                                   "concept",
-                                                   "const",
-                                                   "consteval",
-                                                   "constexpr",
-                                                   "const_cast",
-                                                   "continue",
-                                                   "co_await",
-                                                   "co_return",
-                                                   "co_yield",
-                                                   "decltype",
-                                                   "default",
-                                                   "delete",
-                                                   "do",
-                                                   "double",
-                                                   "dynamic_cast",
-                                                   "else",
-                                                   "enum",
-                                                   "explicit",
-                                                   "export",
-                                                   "extern",
-                                                   "false",
-                                                   "float",
-                                                   "for",
-                                                   "friend",
-                                                   "goto",
-                                                   "if",
-                                                   "inline",
-                                                   "int",
-                                                   "long",
-                                                   "mutable",
-                                                   "namespace",
-                                                   "new",
-                                                   "noexcept",
-                                                   "not",
-                                                   "not_eq",
-                                                   "nullptr",
-                                                   "operator",
-                                                   "or",
-                                                   "or_eq",
-                                                   "private",
-                                                   "protected",
-                                                   "public",
-                                                   "register",
-                                                   "reinterpret_cast",
-                                                   "requires",
-                                                   "return",
-                                                   "short",
-                                                   "signed",
-                                                   "sizeof",
-                                                   "static",
-                                                   "static_assert",
-                                                   "static_cast",
-                                                   "struct",
-                                                   "switch",
-                                                   "template",
-                                                   "this",
-                                                   "thread_local",
-                                                   "throw",
-                                                   "true",
-                                                   "try",
-                                                   "typedef",
-                                                   "typeid",
-                                                   "typename",
-                                                   "union",
-                                                   "unsigned",
-                                                   "using",
-                                                   "virtual",
-                                                   "void",
-                                                   "volatile",
-                                                   "wchar_t",
-                                                   "while",
-                                                   "xor",
-                                                   "xor_eq"};
+        const std::vector<std::string> keywords = {
+            "alignas",      "alignof",      "and",           "and_eq",
+            "asm",          "auto",         "bitand",        "bitor",
+            "bool",         "break",        "case",          "catch",
+            "char",         "char8_t",      "char16_t",      "char32_t",
+            "class",        "compl",        "concept",       "const",
+            "consteval",    "constexpr",    "const_cast",    "continue",
+            "co_await",     "co_return",    "co_yield",      "decltype",
+            "default",      "define",       "delete",        "do",
+            "double",       "dynamic_cast", "else",          "enum",
+            "explicit",     "export",       "extern",        "false",
+            "float",        "for",          "friend",        "goto",
+            "if",           "inline",       "include",       "int",
+            "long",         "mutable",      "namespace",     "new",
+            "noexcept",     "not",          "not_eq",        "nullptr",
+            "operator",     "or",           "or_eq",         "private",
+            "protected",    "public",       "register",      "reinterpret_cast",
+            "requires",     "return",       "short",         "signed",
+            "sizeof",       "static",       "static_assert", "static_cast",
+            "struct",       "switch",       "template",      "this",
+            "thread_local", "throw",        "true",          "try",
+            "typedef",      "typeid",       "typename",      "union",
+            "unsigned",     "using",        "virtual",       "void",
+            "volatile",     "wchar_t",      "while",         "xor",
+            "xor_eq"};
         reservedKeywords.insert(keywords.begin(), keywords.end());
     }
 
@@ -193,6 +130,7 @@ void Renamer::loadMappings(const std::string &filename) {
         for (auto &pair : *obj) {
             identifierMap[pair.getFirst().str()] =
                 pair.getSecond().getAsString().value().str();
+            usedShortNames.insert(pair.getSecond().getAsString().value().str());
         }
     }
 }

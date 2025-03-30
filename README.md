@@ -24,8 +24,25 @@ clear; ./tinysea/build/tinysea -mapping=mappings.json -p sketchspace/build/ sket
 ```
 ./tinysea/build/tinysea \
 -mapping=mappings.json \
-tinysea/test.cpp -- \
+tinysea/test.cpp \
+-- \
 -std=c++20 \
 -isystem /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include \
 -isystem /boot/system/develop/headers
+```
+
+```
+./tinysea/build/tinysea \
+    -mapping=mappings.json \
+    tinysea/expr.cpp \
+    -- \
+    -std=c++20 \
+    -I/boot/home/solvespace/src \
+    -isystem /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include \
+    -isystem /boot/system/develop/headers \
+    -march=x86-64 \
+    -D__SSE__=1 \
+    -D__GNUC__=13 \
+    -D__MMX__=1 \
+    -D__SSE2__=1
 ```
