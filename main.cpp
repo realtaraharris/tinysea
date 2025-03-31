@@ -402,7 +402,7 @@ public:
 
     void ExecuteAction() override {
         clang::CompilerInstance &ci = getCompilerInstance();
-
+/*
         // Store original diagnostic consumer
         std::unique_ptr<DiagnosticConsumer> origConsumer =
             ci.getDiagnostics().takeClient();
@@ -411,11 +411,11 @@ public:
         auto diagOpts = new DiagnosticOptions();
         ci.getDiagnostics().setClient(
             new TextDiagnosticPrinter(llvm::errs(), diagOpts));
-
+*/
         ci.getPreprocessor().addPPCallbacks(std::make_unique<CustomPPCallbacks>(
             renamer, ci.getSourceManager(), *rewriter));
         clang::ASTFrontendAction::ExecuteAction();
-
+/*
         // Check and report file write diagnostics
         bool hadErrorsBefore = ci.getDiagnostics().hasErrorOccurred();
         bool overwriteResult = rewriter->overwriteChangedFiles();
@@ -436,6 +436,7 @@ public:
         if (origConsumer) {
             ci.getDiagnostics().setClient(origConsumer.release());
         }
+*/
     }
 };
 
