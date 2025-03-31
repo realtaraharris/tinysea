@@ -99,6 +99,8 @@ void CustomFrontendAction::ExecuteAction() {
     ci.getPreprocessor().addPPCallbacks(std::make_unique<CustomPPCallbacks>(
         renamer, ci.getSourceManager(), *rewriter));
     clang::ASTFrontendAction::ExecuteAction();
+
+    rewriter->overwriteChangedFiles();
 }
 
 CustomActionFactory::CustomActionFactory(Renamer &r) : renamer(r) {}
