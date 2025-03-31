@@ -30,6 +30,9 @@ add_custom_command(
 
 add_executable(tinysea
     main.cpp
+    renamer.cpp
+    ASTVisitor.cpp
+    PPCallbacks.cpp
 )
 
 target_compile_options(tinysea PRIVATE

@@ -2,13 +2,13 @@
 #define STDAFX_H
 
 // System headers
-#include <unordered_set>
-#include <unordered_map>
-#include <vector>
-#include <mutex>
-#include <optional>
 #include <fstream>
 #include <iostream>
+#include <mutex>
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 // Clang/LLVM headers
 #include "clang/AST/ASTContext.h"
@@ -26,5 +26,10 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/JSON.h"
+
+// our headers
+#include "renamer.h"
+#include "ASTVisitor.h"
+#include "PPCallbacks.h"
 
 #endif // STDAFX_H

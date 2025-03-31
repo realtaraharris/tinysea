@@ -6,3 +6,4 @@ BreakBeforeBraces: Attach
 ColumnLimit: 80
 IndentWidth: 4
 Language: Cpp
+SortIncludes: false
