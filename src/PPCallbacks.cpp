@@ -20,13 +20,16 @@ void CustomPPCallbacks::MacroDefined(const Token &MacroNameTok,
         return;
     } // already processed
     processedMacros.insert(macroName);
-    return;
+
+    return; // don't bother with the rest of this method. we may want to delete
+            // the stuff below?
+
     // now actually process the macro
     bool isInvalid = loc.isInvalid();
     bool isInMainFile = sm.isInMainFile(loc);
     bool isInSystemHeader = sm.isInSystemHeader(loc);
     std::string filename = sm.getFilename(loc).str();
-    std::string shortName = renamer.getShortName(macroName, true);
+    std::string shortName = renamer.getShortName(macroName);
 
     llvm::errs() << "MacroDefined: " << macroName
                  << "\n shortName: " << shortName
@@ -38,7 +41,7 @@ void CustomPPCallbacks::MacroDefined(const Token &MacroNameTok,
     if (shortName.empty()) {
         return;
     }
-    //    rewriter.ReplaceText(loc, macroName.length(), shortName);
+    // rewriter.ReplaceText(loc, macroName.length(), shortName);
 }
 
 void CustomPPCallbacks::MacroExpands(const Token &MacroNameTok,

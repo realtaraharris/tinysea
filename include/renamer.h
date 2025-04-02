@@ -2,7 +2,6 @@
 
 class Renamer {
     std::unordered_map<std::string, std::string> identifierMap;
-    std::unordered_map<std::string, std::string> macroMap;
     std::set<std::string> reservedKeywords;
     std::stringstream combinedOutput;
     unsigned currentIndex = 0;
@@ -16,8 +15,7 @@ public:
     void loadMappings(const std::string &filename);
     void saveMappings(const std::string &filename);
 
-    std::string getShortName(const std::string &qualifiedName,
-                             bool isMacro = false);
+    std::string getShortName(const std::string &qualifiedName);
 
     bool hasMappings() const;
     void collectTransformedCode(const std::string &filename,

@@ -119,31 +119,33 @@ void Renamer::saveMappings(const std::string &filename) {
     }
 }
 
-std::string Renamer::getShortName(const std::string &qualifiedName,
-                                  bool isMacro) {
+std::string Renamer::getShortName(const std::string &qualifiedName) {
     static const std::set<std::string> preservedTypes = {
-        "int",  "char",      "void",   "bool",      "float",      "double",
-        "main", "ptrdiff_t", "size_t", "nullptr_t", "max_align_t"};
+        "int",  "char",      "void",   "bool",      "float",       "double",
+        "main", "ptrdiff_t", "size_t", "nullptr_t", "max_align_t", "NULL"};
 
+    // if we find that the qualified name is part of a library, pass it through
     if (preservedTypes.count(qualifiedName) ||
-        qualifiedName.starts_with("std::") ||
-        preservedTypes.count(qualifiedName)) {
+        qualifiedName.starts_with("std::")) {
         return qualifiedName;
     }
 
-    auto &map = isMacro ? macroMap : identifierMap;
-    if (auto it = map.find(qualifiedName); it != map.end()) {
+    // if we've already seen the thing before, return the associated shortname
+    if (auto it = identifierMap.find(qualifiedName);
+        it != identifierMap.end()) {
         return it->second;
     }
 
+    // we didn't find the name, so let's make a new name
     std::string newName;
 
-    // generate new names until we get one that's not a reserved keyword
-    do {
+    do { // generate new names until we get one that's not a reserved keyword
         newName = generateName(currentIndex++);
     } while (reservedKeywords.count(newName));
+
     std::cout << "newName: " << newName << std::endl;
-    map[qualifiedName] = newName;
+
+    identifierMap[qualifiedName] = newName;
     return newName;
 }
 
