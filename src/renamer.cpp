@@ -58,17 +58,6 @@ Renamer::Renamer() {
     initKeywords();
 }
 
-bool Renamer::hasMacro(const std::string &name) const {
-    return macroMap.find(name) != macroMap.end();
-}
-
-std::string Renamer::getMacroShortName(const std::string &name) const {
-    if (auto it = macroMap.find(name); it != macroMap.end()) {
-        return it->second;
-    }
-    return "";
-}
-
 void Renamer::loadMappings(const std::string &filename) {
     std::ifstream file(filename);
     if (!file)
@@ -109,7 +98,6 @@ void Renamer::loadMappings(const std::string &filename) {
             }
 
             identifierMap[original] = shortName;
-            usedShortNames.insert(shortName);
         }
     }
 
@@ -133,8 +121,6 @@ void Renamer::saveMappings(const std::string &filename) {
 
 std::string Renamer::getShortName(const std::string &qualifiedName,
                                   bool isMacro) {
-    std::lock_guard<std::mutex> lock(mtx);
-
     static const std::set<std::string> preservedTypes = {
         "int",  "char",      "void",   "bool",      "float",      "double",
         "main", "ptrdiff_t", "size_t", "nullptr_t", "max_align_t"};
@@ -151,25 +137,26 @@ std::string Renamer::getShortName(const std::string &qualifiedName,
     }
 
     std::string newName;
+
+    // generate new names until we get one that's not a reserved keyword
     do {
         newName = generateName(currentIndex++);
     } while (reservedKeywords.count(newName));
-
+    std::cout << "newName: " << newName << std::endl;
     map[qualifiedName] = newName;
     return newName;
 }
 
-bool Renamer::hasIdentifier(const std::string &name) const {
-    return identifierMap.find(name) != identifierMap.end();
-}
-
-std::string Renamer::getIdentifierShortName(const std::string &name) const {
-    if (auto it = identifierMap.find(name); it != identifierMap.end()) {
-        return it->second;
-    }
-    return "";
-}
-
-bool Renamer::hasIdentifierMappings() const {
+bool Renamer::hasMappings() const {
     return !identifierMap.empty();
+}
+
+void Renamer::collectTransformedCode(const std::string &filename,
+                                     const std::string &content) {
+    combinedOutput << "// ======== " << filename << " ========\n"
+                   << content << "\n\n";
+}
+
+std::string Renamer::getCombinedOutput() const {
+    return combinedOutput.str();
 }

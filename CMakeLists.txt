@@ -42,8 +42,10 @@ find_program(CLANG_FORMAT NAMES clang-format)
 if(CLANG_FORMAT)
     # TODO: get this from the files passed to add_executable instead of using file(GLOB_RECURSE ...)
     file(GLOB_RECURSE ALL_SOURCE_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
     )
     list(FILTER ALL_SOURCE_FILES EXCLUDE REGEX "CMakeCXXCompilerId.cpp")
 

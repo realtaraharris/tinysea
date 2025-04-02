@@ -20,27 +20,25 @@ void CustomPPCallbacks::MacroDefined(const Token &MacroNameTok,
         return;
     } // already processed
     processedMacros.insert(macroName);
-
+    return;
     // now actually process the macro
     bool isInvalid = loc.isInvalid();
     bool isInMainFile = sm.isInMainFile(loc);
     bool isInSystemHeader = sm.isInSystemHeader(loc);
     std::string filename = sm.getFilename(loc).str();
-
-    llvm::errs() << "MacroDefined: "
-                 << MacroNameTok.getIdentifierInfo()->getName()
-                 << "\n macroName: " << macroName
-                 << "\n isInvalid: " << isInvalid
-                 << "\n isInMainFile: " << isInMainFile
-                 << "\n isInSystemHeader: " << isInSystemHeader
-                 << "\n Location: " << loc.printToString(sm)
-                 << "\n Filename: " << filename << "\n";
-    sm.dump();
-
     std::string shortName = renamer.getShortName(macroName, true);
 
-    rewriter.ReplaceText(MacroNameTok.getLocation(), macroName.length(),
-                         shortName);
+    llvm::errs() << "MacroDefined: " << macroName
+                 << "\n shortName: " << shortName
+                 << "\n location: " << loc.printToString(sm)
+                 << "\n filename: " << filename << "\n isInvalid: " << isInvalid
+                 << "\n isInMainFile: " << isInMainFile
+                 << "\n isInSystemHeader: " << isInSystemHeader << "\n";
+
+    if (shortName.empty()) {
+        return;
+    }
+    //    rewriter.ReplaceText(loc, macroName.length(), shortName);
 }
 
 void CustomPPCallbacks::MacroExpands(const Token &MacroNameTok,
@@ -55,23 +53,25 @@ void CustomPPCallbacks::MacroExpands(const Token &MacroNameTok,
     bool isInMainFile = sm.isInMainFile(loc);
     bool isInSystemHeader = sm.isInSystemHeader(loc);
     std::string filename = sm.getFilename(loc).str();
-
-    llvm::errs() << "MacroExpands: "
-                 << MacroNameTok.getIdentifierInfo()->getName()
-                 << "\n  Location: " << loc.printToString(sm)
-                 << "\n  Filename: " << filename
-                 << "\n  isInvalid: " << isInvalid
-                 << "\n  isInMainFile: " << isInMainFile
-                 << "\n  isInSystemHeader: " << isInSystemHeader << "\n";
-    sm.dump();
-
     std::string macroName = MacroNameTok.getIdentifierInfo()->getName().str();
-    std::string shortName = renamer.getMacroShortName(macroName);
+    std::string shortName = renamer.getShortName(macroName, true);
 
-    if (!shortName.empty()) {
-        rewriter.ReplaceText(MacroNameTok.getLocation(), macroName.length(),
-                             shortName);
+    /*
+        llvm::errs() << "MacroExpands: " << macroName
+                     << "\n shortName: " << shortName
+                     << "\n location: " << loc.printToString(sm)
+                     << "\n filename: " << filename
+                     << "\n isInvalid: " << isInvalid
+                     << "\n isInMainFile: " << isInMainFile
+                     << "\n isInSystemHeader: " << isInSystemHeader
+                     << "\n"; */
+
+    if (shortName.empty()) {
+        std::cout << "empty shortname" << std::endl;
+        return;
     }
+
+    rewriter.ReplaceText(loc, macroName.length(), shortName);
 }
 
 CustomASTConsumer::CustomASTConsumer(clang::ASTContext &ctx, Renamer &r,
@@ -88,18 +88,16 @@ CustomFrontendAction::CustomFrontendAction(Renamer &r)
 std::unique_ptr<clang::ASTConsumer>
 CustomFrontendAction::CreateASTConsumer(clang::CompilerInstance &ci,
                                         llvm::StringRef) {
-    rewriter->setSourceMgr(ci.getSourceManager(), ci.getLangOpts());
+    // rewriter->setSourceMgr(ci.getSourceManager(), ci.getLangOpts());
     return std::make_unique<CustomASTConsumer>(ci.getASTContext(), renamer,
                                                *rewriter);
 }
 
 void CustomFrontendAction::ExecuteAction() {
     clang::CompilerInstance &ci = getCompilerInstance();
-
     ci.getPreprocessor().addPPCallbacks(std::make_unique<CustomPPCallbacks>(
         renamer, ci.getSourceManager(), *rewriter));
     clang::ASTFrontendAction::ExecuteAction();
-
     rewriter->overwriteChangedFiles();
 }
 

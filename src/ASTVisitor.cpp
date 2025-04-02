@@ -21,13 +21,20 @@ bool CustomASTVisitor::VisitNamedDecl(NamedDecl *decl) {
     std::string qualifiedName = decl->getQualifiedNameAsString();
     std::string shortName = renamer.getShortName(qualifiedName);
 
-    // Perform replacement
-    if (decl->getIdentifier() && !decl->getName().empty()) {
-        SourceLocation nameLoc = sm.getSpellingLoc(decl->getLocation());
-        rewriter.ReplaceText(nameLoc, decl->getName().size(), shortName);
-        llvm::errs() << "Renamed: " << qualifiedName << " => " << shortName
-                     << "\n";
-    }
+    // Collect changes
+    std::string transformed = rewriter.getRewrittenText(decl->getSourceRange());
+    renamer.collectTransformedCode(sm.getFilename(decl->getLocation()).str(),
+                                   transformed);
+
+    // Direct replacement in source file: don't want!
+    /*
+        if (decl->getIdentifier() && !decl->getName().empty()) {
+            SourceLocation nameLoc = sm.getSpellingLoc(decl->getLocation());
+            rewriter.ReplaceText(nameLoc, decl->getName().size(), shortName);
+            llvm::errs() << "Renamed: " << qualifiedName << " => " << shortName
+                         << "\n";
+        }
+    */
 
     return true;
 }
@@ -40,7 +47,7 @@ bool CustomASTVisitor::VisitDeclRefExpr(DeclRefExpr *expr) {
             return true;
 
         std::string qualifiedName = decl->getQualifiedNameAsString();
-        std::string shortName = renamer.getIdentifierShortName(qualifiedName);
+        std::string shortName = renamer.getShortName(qualifiedName);
         llvm::errs() << "VisitDeclRefExpr, qualifiedName: " << qualifiedName
                      << " shortName: " << shortName << "\n";
         if (!shortName.empty()) {

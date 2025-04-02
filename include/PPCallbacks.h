@@ -36,10 +36,23 @@ public:
     void ExecuteAction() override;
 };
 
-class CustomActionFactory : public FrontendActionFactory {
+class CustomActionFactory : public clang::tooling::FrontendActionFactory {
     Renamer &renamer;
 
 public:
     CustomActionFactory(Renamer &r);
-    std::unique_ptr<FrontendAction> create() override;
+
+    std::unique_ptr<clang::FrontendAction> create() override;
+};
+
+class CustomFrontendActionFactory
+    : public clang::tooling::FrontendActionFactory {
+    Renamer &renamer;
+
+public:
+    explicit CustomFrontendActionFactory(Renamer &r) : renamer(r) {}
+
+    std::unique_ptr<clang::FrontendAction> create() override {
+        return std::make_unique<CustomFrontendAction>(renamer);
+    }
 };
